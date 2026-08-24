@@ -1,0 +1,1 @@
+window.CARTERA_CONFIG={supabaseUrl:'https://layqqdkatatutmexoqrl.supabase.co',supabaseKey:'sb_publishable_mob6Bya5CJ5AyzBNJd_TvA_VFIGyWc8'};
