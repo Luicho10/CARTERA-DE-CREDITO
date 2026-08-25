@@ -1,0 +1,1 @@
+window.addEventListener('DOMContentLoaded',()=>{const p=$('printBtn');if(p)p.onclick=()=>window.print();const m=$('moraPrintBtn');if(m)m.onclick=()=>window.print();});
