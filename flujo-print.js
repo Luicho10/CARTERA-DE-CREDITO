@@ -6,6 +6,20 @@
     if(!btn){btn=document.createElement('button');btn.id='fcPrintBtn';btn.type='button';btn.textContent='Imprimir / PDF';head.appendChild(btn)}
     btn.onclick=printFlujo;
   }
+  function syncFormValues(original,clone){
+    clone.querySelectorAll('select[id],input[id]').forEach(el=>{
+      const src=original.querySelector('#'+CSS.escape(el.id));
+      if(!src)return;
+      if(el.tagName==='SELECT'){
+        const value=src.value;
+        [...el.options].forEach(o=>o.removeAttribute('selected'));
+        const selected=[...el.options].find(o=>o.value===value);
+        if(selected)selected.setAttribute('selected','selected');
+      }else{
+        el.setAttribute('value',src.value);
+      }
+    });
+  }
   function printFlujo(e){
     if(e){e.preventDefault();e.stopImmediatePropagation();}
     const v=document.getElementById('view-flujo'); if(!v)return false;
@@ -14,6 +28,7 @@
     content.style.display='block';
     content.querySelectorAll('.view').forEach(x=>{x.classList.remove('view','active');x.style.display='block'});
     content.querySelectorAll('#fcPrintBtn').forEach(x=>x.remove());
+    syncFormValues(v,content);
     const styles=[...document.querySelectorAll('link[rel="stylesheet"]')].map(x=>`<link rel="stylesheet" href="${x.href}">`).join('');
     const w=window.open('','_blank','width=1100,height=800');
     if(!w){alert('El navegador bloqueó la ventana de impresión. Permita ventanas emergentes para este sitio.');return false;}
