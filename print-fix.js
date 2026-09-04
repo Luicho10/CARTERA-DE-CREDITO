@@ -22,9 +22,11 @@ window.addEventListener('DOMContentLoaded',()=>{
     const input=box.querySelector('input');if(input&&!input.value)input.value=getDate();
     const print=view.querySelector('.report-date-print');if(print)print.textContent=`Fecha del reporte: ${fmt(input?.value||getDate())}`;
   }
-  function prepare(){ensureReportDate(document.getElementById('view-mora'));ensureReportDate(document.getElementById('view-consolidado'));}
+  function prepare(){ensureReportDate(document.getElementById('view-mora'));ensureReportDate(document.getElementById('view-consolidado'));ensureReportDate(document.getElementById('view-flujo'));}
   prepare();
-  document.querySelectorAll('.tab[data-view="mora"],.tab[data-view="consolidado"]').forEach(b=>b.addEventListener('click',()=>setTimeout(prepare,150)));
+  const observer=new MutationObserver(()=>{const v=document.getElementById('view-flujo');if(v&&v.querySelector('.section-title'))ensureReportDate(v);});
+  const flow=document.getElementById('view-flujo');if(flow)observer.observe(flow,{childList:true,subtree:true});
+  document.querySelectorAll('.tab[data-view="mora"],.tab[data-view="consolidado"],.tab[data-view="flujo"]').forEach(b=>b.addEventListener('click',()=>setTimeout(prepare,150)));
   const p=$('printBtn');if(p)p.onclick=()=>{prepare();window.print()};
   const m=$('moraPrintBtn');if(m)m.onclick=()=>{prepare();const s=style;s.textContent='@media print{.view{display:none!important}#view-mora.view:not(#view-consolidado){display:block!important}.report-date-control{display:none!important}.report-date-print{display:block!important}}';window.print();setTimeout(()=>{s.textContent='@media print{.view{display:none!important}#view-mora.view:not(#view-consolidado){display:block!important}#view-consolidado{display:block!important}.report-date-control{display:none!important}.report-date-print{display:block!important}}'},1000)};
 });
