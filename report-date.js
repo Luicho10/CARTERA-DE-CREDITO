@@ -19,8 +19,7 @@
   }
   window.getReportDate=value;
   window.ensureReportDate=mount;
-  function mountStatic(){mount(document.getElementById('view-mora'));mount(document.getElementById('view-consolidado'));mount(document.getElementById('view-flujo'))}
-  document.addEventListener('click',e=>{if(e.target.closest('.tab[data-view="mora"],.tab[data-view="consolidado"]'))setTimeout(mountStatic,120);if(e.target.closest('.tab[data-view="flujo"]'))setTimeout(mountStatic,350)});
-  window.addEventListener('reportdate:refresh',mountStatic);
-  setTimeout(mountStatic,500);
+  function mountAll(){mount(document.getElementById('view-importar'));mount(document.getElementById('view-mora'));mount(document.getElementById('view-consolidado'));mount(document.getElementById('view-flujo'))}
+  document.addEventListener('click',e=>{if(e.target.closest('.tab[data-view="mora"],.tab[data-view="consolidado"],.tab[data-view="importar"]'))setTimeout(mountAll,150);if(e.target.closest('.tab[data-view="flujo"]'))setTimeout(mountAll,350)});
+  setTimeout(mountAll,500);
 })();
