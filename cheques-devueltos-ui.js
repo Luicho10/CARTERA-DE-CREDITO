@@ -10,5 +10,7 @@
     tab.onclick=function(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));sec.classList.add('active');tab.classList.add('active');if(window.initChequesDevueltos)window.initChequesDevueltos()};
     if(window.initChequesDevueltos)window.initChequesDevueltos();
   }
-  const s=document.createElement('script');s.src='cheques-devueltos.js?v=20260916001';s.onload=montar;document.body.appendChild(s);
+  // Versionar el lector para obligar al navegador/GitHub Pages a descargar
+  // la versión corregida y no reutilizar el JS anterior en caché.
+  const s=document.createElement('script');s.src='cheques-devueltos.js?v=20260917003';s.onload=montar;s.onerror=()=>console.error('No se pudo cargar cheques-devueltos.js');document.body.appendChild(s);
 })();
