@@ -23,138 +23,94 @@
     const y=m[3].length===2?'20'+m[3]:m[3];
     return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
   }
-  function dateIn(s){return /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(s)}
-  function valueIn(s){return /\d[\d.]*,\d{2}\b/.test(s)}
 
-  // Datapar entrega el PDF como objetos de texto con coordenadas X/Y.
-  // En vez de asumir coordenadas fijas, primero localizamos los encabezados reales
-  // del propio PDF y calculamos automáticamente los límites de cada columna.
-  const HEADER_KEYS=[
-    ['responsable',['responsable']],
-    ['titular',['titular']],
-    ['ruc',['ruc/ci','ruc','ci']],
-    ['banco',['banco']],
-    ['cuenta',['cuenta']],
-    ['cheque',['cheque']],
-    ['emision',['emision']],
-    ['recepcion',['recep','recepcion']],
-    ['diferida',['diferid','diferida']],
-    ['moneda',['mon']],
-    ['valor',['valor']],
-    ['situacion',['situacion']],
-    ['movimiento',['movimiento']],
-    ['vendedor',['vend.','vend']]
-  ];
-
-  function headerAnchors(groups){
-    const anchors={};
-    // El encabezado de Datapar puede ocupar dos renglones. Buscamos etiquetas
-    // individualmente dentro de los primeros grupos del informe.
-    for(const g of groups.slice(0,30)){
-      for(const item of g.items){
-        const t=norm(item.s);
-        for(const [key,variants] of HEADER_KEYS){
-          if(anchors[key]!=null)continue;
-          if(variants.some(v=>t===v||t.startsWith(v)||t.includes(v))){anchors[key]=item.x;break}
-        }
-      }
-    }
-    return anchors;
+  // IMPORTANTE: en el PDF real de Datapar las coordenadas X están invertidas
+  // respecto del orden visual de las columnas. Estas bandas fueron tomadas del
+  // PDF real CHEQUE DEVUELTO.pdf cargado para la prueba.
+  const BANDS={
+    vendedor:[20,47],
+    movimiento:[47,90],
+    situacion:[90,128],
+    historico:[128,178],
+    valor:[178,210],
+    moneda:[210,230],
+    diferida:[225,265],
+    recepcion:[258,295],
+    emision:[292,330],
+    cheque:[325,360],
+    cuenta:[375,410],
+    banco:[410,480],
+    ruc:[480,535],
+    titular:[610,710],
+    responsable:[750,842]
+  };
+  function band(items,key){
+    const [a,b]=BANDS[key];
+    return clean(items.filter(i=>i.x>=a&&i.x<b).sort((u,v)=>u.x-v.x).map(i=>i.s).join(' '));
   }
 
-  function columnBounds(anchors){
-    const entries=Object.entries(anchors).filter(([,x])=>Number.isFinite(x)).sort((a,b)=>a[1]-b[1]);
-    const bounds=[];
-    for(let i=0;i<entries.length;i++){
-      const [key,x]=entries[i];
-      const prev=entries[i-1]?.[1];
-      const next=entries[i+1]?.[1];
-      bounds.push({key,left:prev==null?x-40:(prev+x)/2,right:next==null?x+120:(x+next)/2});
-    }
-    return bounds;
-  }
-
-  function assignItems(items,bounds){
-    const cells={};
-    for(const it of items){
-      let b=bounds.find(z=>it.x>=z.left&&it.x<z.right);
-      if(!b){
-        let best=null,dist=Infinity;
-        for(const z of bounds){const d=Math.abs(it.x-(z.left+z.right)/2);if(d<dist){dist=d;best=z}}
-        b=best;
-      }
-      if(!b)continue;
-      cells[b.key]=clean(`${cells[b.key]||''} ${it.s}`);
-    }
-    return cells;
-  }
-
-  function parseDataparRows(groups){
-    const anchors=headerAnchors(groups);
-    const bounds=columnBounds(anchors);
+  function parseRows(groups){
     const out=[];
     for(const g of groups){
       const items=g.items;
       const all=clean(items.map(i=>i.s).join(' '));
       if(!all)continue;
-      if(/^(pag:|filtros:|resumen|archivo:|total$|devuelto\s+us\$)/i.test(norm(all)))continue;
-      if(/^(moneda|cuenta|fecha base|situacion)\s*:/i.test(norm(all)))continue;
-      if(/titular.*banco.*cuenta.*cheque.*emisi/i.test(norm(all)))continue;
+      const n=norm(all);
+      if(/^(pag:|filtros:|resumen|archivo:|total$)/.test(n))continue;
+      if(/^(moneda|cuenta|fecha base|situacion)\s*:/.test(n))continue;
+      if(/titular.*banco.*cuenta.*cheque.*emision/i.test(n))continue;
 
-      // Una fila real debe contener fechas y un importe. Los resúmenes también
-      // contienen importe, pero no contienen un número de cheque identificable.
-      const cells=assignItems(items,bounds);
+      // La fila de detalle del Datapar tiene el número de cheque en su columna
+      // y al menos una fecha + importe. Los resúmenes no tienen número de cheque.
+      const cheque=band(items,'cheque').match(/\d{4,12}/)?.[0]||'';
       const dates=[...all.matchAll(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g)].map(m=>m[0]);
-      if(!dates.length||!valueIn(all))continue;
+      const valor= parseMoney(band(items,'valor')) || parseMoney(band(items,'historico').match(/\d[\d.]*,\d{2}/)?.[0]||'');
+      if(!cheque||!dates.length||valor<=0)continue;
 
-      let cheque=clean(cells.cheque||'');
-      let titular=clean(cells.titular||'');
-      let responsable=clean(cells.responsable||'');
-      let ruc=clean(cells.ruc||'');
-      let banco=clean(cells.banco||'');
-      let cuenta=clean(cells.cuenta||'');
-      let valor=parseMoney(cells.valor||'');
+      let titular=band(items,'titular');
+      let responsable=band(items,'responsable');
+      const ruc=band(items,'ruc');
+      const banco=band(items,'banco');
+      const cuenta=band(items,'cuenta');
+      const emision=band(items,'emision')||dates[0];
+      const recepcion=band(items,'recepcion')||dates[1]||dates[0];
+      const diferida=band(items,'diferida')||dates[2]||dates[1]||dates[0];
+      const moneda=/GS|GUARAN[IÍ]ES/i.test(band(items,'moneda'))?'GS':'USD';
+      const situacion=clean(band(items,'situacion'))||'DEVUELTO';
+      const movimiento=clean(`${band(items,'movimiento')} ${band(items,'historico').replace(/\d[\d.]*,\d{2}/,'')}`).trim()||'DEVOLVIDO';
+      const vendedor=band(items,'vendedor');
 
-      // Fallback por texto cuando una celda PDF fue concatenada por PDF.js.
-      if(!valor){
-        const vm=all.match(/(\d{1,3}(?:\.\d{3})*,\d{2})\s*(?:US\$|USD|GS)?/i);
-        if(vm)valor=parseMoney(vm[1]);
-      }
-      if(!cheque){
-        // El cheque suele ser numérico y está entre Cuenta y Emisión. Si PDF.js
-        // concatenó Cuenta+Cheque+Fecha, tomamos el bloque inmediatamente previo
-        // a la primera fecha, excluyendo el código de cuenta.
-        const firstDate=all.search(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/);
-        const pre=firstDate>=0?all.slice(0,firstDate):'';
-        const nums=[...pre.matchAll(/\b\d{4,12}\b/g)].map(m=>m[0]);
-        if(nums.length)cheque=nums[nums.length-1];
-      }
-      if(!titular){
-        const dm=all.match(/(?:^|\d{3,12})([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9 .,&()'-]{3,})(?=\s+\(\d+\)|\s+[A-Z]+\s+BANK)/i);
-        if(dm)titular=clean(dm[1]);
-      }
-      if(!responsable)responsable=titular||'SIN INFORMAR';
+      // En el formato real probado, Titular y Responsable son campos separados.
+      // Si Datapar deja uno vacío, se conserva vacío; no se inventa información.
+      if(!titular)titular='SIN INFORMAR';
+      if(!responsable)responsable='SIN INFORMAR';
 
-      const r={
+      out.push({
         responsable,
-        titular:titular||'SIN INFORMAR',
+        titular,
         ruc_ci_titular:ruc,
         banco,
         cuenta,
         numero_cheque:cheque,
-        fecha_emision:parseDate(cells.emision||dates[0]),
-        fecha_recepcion:parseDate(cells.recepcion||dates[1]||dates[0]),
-        fecha_diferida:parseDate(cells.diferida||dates[2]||dates[1]||dates[0]),
-        moneda:/GS|GUARAN[IÍ]ES/i.test(cells.moneda||all)?'GS':'USD',
+        fecha_emision:parseDate(emision),
+        fecha_recepcion:parseDate(recepcion),
+        fecha_diferida:parseDate(diferida),
+        moneda,
         valor,
-        valor_historico:parseMoney(cells.valor||''),
-        situacion:'DEVUELTO',
-        movimiento:clean(cells.movimiento||'DEVOLVIDO'),
-        vendedor:clean(cells.vendedor||'')
-      };
-      if(r.numero_cheque&&r.valor>0&&(r.fecha_emision||r.fecha_recepcion||r.fecha_diferida))out.push(r);
+        valor_historico:valor,
+        situacion:/DEVUELTO|DEVOLV|RECHAZ/i.test(`${situacion} ${movimiento}`)?'DEVUELTO':'DEVUELTO',
+        movimiento:movementText(movimiento),
+        vendedor
+      });
     }
     return out;
+  }
+
+  function movementText(s){
+    const t=clean(s);
+    if(/CHEQUE\s+RECHAZADO/i.test(t))return 'CHEQUE RECHAZADO';
+    if(/DEVOLVIDO/i.test(t))return 'DEVOLVIDO';
+    return t||'DEVOLVIDO';
   }
 
   async function extract(file){
@@ -173,7 +129,7 @@
       }
       pageGroups.sort((a,b)=>b.y-a.y).forEach(g=>groups.push(g));
     }
-    return parseDataparRows(groups);
+    return parseRows(groups);
   }
 
   async function hash(file){
@@ -193,7 +149,7 @@
   }
 
   async function importPdf(file){
-    $('chequeStatus').textContent='Leyendo estructura y columnas del informe Datapar…';
+    $('chequeStatus').textContent='Leyendo columnas del informe Datapar…';
     try{
       const rows=await extract(file);
       if(!rows.length){$('chequeStatus').textContent='No se detectaron filas válidas de cheques DEVUELTO. No se guardó información.';return}
