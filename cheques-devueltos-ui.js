@@ -10,5 +10,5 @@
     tab.onclick=function(){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));sec.classList.add('active');tab.classList.add('active');if(window.initChequesDevueltos)window.initChequesDevueltos()};
     if(window.initChequesDevueltos)window.initChequesDevueltos();
   }
-  const s=document.createElement('script');s.src='cheques-devueltos.js?v=20260917009';s.onload=montar;document.body.appendChild(s);
+  const s=document.createElement('script');s.src='cheques-devueltos.js?v=20260917010';s.onload=montar;document.body.appendChild(s);
 })();
