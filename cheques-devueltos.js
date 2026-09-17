@@ -21,9 +21,6 @@
       const items=c.items.map(i=>({s:String(i.str||''),x:Number(i.transform?.[4]||0),y:Number(i.transform?.[5]||0)}));
       const groups=[];
       for(const it of items){let g=groups.find(a=>Math.abs(a.y-it.y)<3);if(!g){g={y:it.y,items:[]};groups.push(g)}g.items.push(it)}
-      // Se conserva el orden espacial del informe, pero NO se usan las líneas
-      // como límite de registro: en este PDF las columnas de una misma fila
-      // tienen pequeñas diferencias de coordenada Y.
       const pageText=groups.sort((a,b)=>b.y-a.y).map(g=>g.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ')).join(' ').replace(/\s+/g,' ').trim();
       pages.push(pageText);
     }
@@ -33,10 +30,7 @@
   function parseDatapar(text){
     const t=String(text||'').replace(/\s+/g,' ').trim();
     const out=[];
-    // Se localizan los registros por la estructura que permanece estable en
-    // Datapar: Nº cheque -> titular -> (código) banco -> cuenta -> 3 fechas ->
-    // importe/moneda -> CHEQUE RECHAZADO -> DEVUELTO.
-    const re=/(\d{5,8})\s*(.*?)\s*\(\d+\)\s*([A-ZÁÉÍÓÚÑ0-9 .&'\-]*?BANK)\s*(C\d+?)(?=\d{1,2}\/\d{1,2}\/\d{2,4})(\d{1,2}\/\d{1,2}\/\d{2,4})\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*([\d.]+,\d{2})\s*(US\$|USD|GS\$|GS)\s*CHEQUE\s*RECHAZADO\s*.*?DEVUELTO/gi;
+    const re=/(\d{5,8})\s*(.*?)\s*\(\d+\)\s*([A-ZÁÉÍÓÚÑ0-9 .&'\-]*?BANK)\s*(C\d+?)\s*(?=\d{1,2}\/\d{1,2}\/\d{2,4})(\d{1,2}\/\d{1,2}\/\d{2,4})\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*([\d.]+,\d{2})\s*(US\$|USD|GS\$|GS)\s*CHEQUE\s*RECHAZADO\s*.*?DEVUELTO/gi;
     let m;
     while((m=re.exec(t))){
       const titular=m[2].replace(/\s+/g,' ').trim();
@@ -44,22 +38,7 @@
       const cuenta=m[4].trim();
       const valor=parseMoney(m[8]);
       if(!titular||!banco||!cuenta||!valor)continue;
-      out.push({
-        responsable:titular,
-        titular,
-        ruc_ci_titular:'',
-        banco,
-        cuenta,
-        numero_cheque:m[1],
-        fecha_emision:parseDate(m[5]),
-        fecha_recepcion:parseDate(m[6]),
-        fecha_diferida:parseDate(m[7]),
-        moneda:/US\$|USD/i.test(m[9])?'USD':'GS',
-        valor,
-        valor_historico:valor,
-        situacion:'DEVUELTO',
-        movimiento:'DEVUELTO'
-      });
+      out.push({responsable:titular,titular,ruc_ci_titular:'',banco,cuenta,numero_cheque:m[1],fecha_emision:parseDate(m[5]),fecha_recepcion:parseDate(m[6]),fecha_diferida:parseDate(m[7]),moneda:/US\$|USD/i.test(m[9])?'USD':'GS',valor,valor_historico:valor,situacion:'DEVUELTO',movimiento:'DEVUELTO'});
     }
     const seen=new Set();
     return out.filter(r=>{const k=`${r.numero_cheque}|${r.valor}|${r.fecha_diferida}`;if(seen.has(k))return false;seen.add(k);return true});
@@ -77,7 +56,7 @@
   async function importPdf(file){
     try{
       const rows=await extractPdf(file);
-      if(!rows.length){$('chequeStatus').textContent='No se encontró la fila de cheque devuelto en el informe Datapar. No se guardó información.';return}
+      if(!rows.length){$('chequeStatus').textContent='No se pudo identificar el registro de cheque devuelto en el PDF Datapar.';return}
       const h=await hashFile(file);
       let {data:imp,error}=await sb.from('cheque_importaciones').select('id').eq('hash_archivo',h).maybeSingle();
       if(error)throw error;
