@@ -11,7 +11,7 @@
   const hashFile=async file=>{const b=await file.arrayBuffer(),h=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')};
 
   async function extractPdf(file){
-    $('chequeStatus').textContent='Leyendo PDF Datapar…';
+    $('chequeStatus').textContent='Leyendo informe Datapar…';
     const pdfjs=await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.mjs');
     pdfjs.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs';
     const pdf=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
@@ -25,27 +25,38 @@
   }
 
   function parseDatapar(lines){
-    // Se analiza la FILA del detalle, no el encabezado ni los resúmenes.
-    // Esta es la estructura que entrega el PDF real:
-    // 961496 SUR AGRO E.A.S. (01) UENO BANK 7879 05/01/2026 05/01/2026 30/06/2026 US$ 47.209,80 CHEQUE RECHAZADO SUR AGRO DEVOLVIDO C00002905002 6
-    for(const line of lines){
-      if(!/CHEQUE\s+RECHAZADO/i.test(line)||!/DEVUELTO/i.test(line))continue;
-      const m=line.match(/^(\d{5,8})\s+(.+?)\s+\((\d+)\)\s*([A-ZÁÉÍÓÚÑ0-9 .&'\-]*?BANK)\s+(\d+)\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(US\$|USD|GS\$|GS)\s+([\d.]+,\d{2})\s+CHEQUE\s+RECHAZADO\s+(.+?)\s+DEVUELTO/i);
-      if(!m)continue;
-      const titular=m[2].trim();
-      const valor=parseMoney(m[10]);
-      if(!titular||!valor)continue;
+    // El PDF real de Datapar compacta los campos: no hay espacios entre
+    // 961496 y SUR, entre UENO BANK y la cuenta, ni entre cuenta y fecha.
+    // Se usan las marcas estructurales del propio informe y no los espacios.
+    for(const raw of lines){
+      const line=String(raw||'').replace(/\s+/g,' ').trim();
+      if(!/CHEQUE\s*RECHAZADO/i.test(line)||!/DEVUELTO/i.test(line))continue;
+
+      const head=line.match(/^(\d{5,8})(.*?)\s*\((\d+)\)\s*([A-ZÁÉÍÓÚÑ0-9 .&'\-]*?BANK)\s*(C\d+?)(?=\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if(!head)continue;
+
+      const titular=head[2].trim();
+      const banco=head[4].replace(/\s+/g,' ').trim();
+      const cuenta=head[5].trim();
+      const rest=line.slice(head[0].length);
+      const dates=[...rest.matchAll(/\d{1,2}\/\d{1,2}\/\d{2,4}/g)].map(x=>x[0]);
+      const moneyMatch=rest.match(/([\d.]+,\d{2})\s*(US\$|USD|GS\$|GS)/i);
+      if(!titular||dates.length<3||!moneyMatch)continue;
+      if(!/CHEQUE\s*RECHAZADO/i.test(rest)||!/DEVUELTO/i.test(rest))continue;
+
+      const valor=parseMoney(moneyMatch[1]);
+      if(!valor)continue;
       return [{
         responsable:titular,
         titular,
         ruc_ci_titular:'',
-        banco:m[4].replace(/\s+/g,' ').trim(),
-        cuenta:m[5],
-        numero_cheque:m[1],
-        fecha_emision:parseDate(m[6]),
-        fecha_recepcion:parseDate(m[7]),
-        fecha_diferida:parseDate(m[8]),
-        moneda:/US\$|USD/i.test(m[9])?'USD':'GS',
+        banco,
+        cuenta,
+        numero_cheque:head[1],
+        fecha_emision:parseDate(dates[0]),
+        fecha_recepcion:parseDate(dates[1]),
+        fecha_diferida:parseDate(dates[2]),
+        moneda:/US\$|USD/i.test(moneyMatch[2])?'USD':'GS',
         valor,
         valor_historico:valor,
         situacion:'DEVUELTO',
@@ -67,7 +78,7 @@
   async function importPdf(file){
     try{
       const rows=await extractPdf(file);
-      if(!rows.length){$('chequeStatus').textContent='El PDF fue leído, pero no se encontró la fila de cheque devuelto. No se guardó información.';return}
+      if(!rows.length){$('chequeStatus').textContent='No se encontró la fila de cheque devuelto en el informe Datapar. No se guardó información.';return}
       const h=await hashFile(file);
       let {data:imp,error}=await sb.from('cheque_importaciones').select('id').eq('hash_archivo',h).maybeSingle();
       if(error)throw error;
