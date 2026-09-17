@@ -15,55 +15,54 @@
     const pdfjs=await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.mjs');
     pdfjs.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs';
     const pdf=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
-    const lines=[];
+    const pages=[];
     for(let p=1;p<=pdf.numPages;p++){
-      const page=await pdf.getPage(p),c=await page.getTextContent(),items=c.items.map(i=>({s:String(i.str||''),x:Number(i.transform?.[4]||0),y:Number(i.transform?.[5]||0)})),groups=[];
+      const page=await pdf.getPage(p),c=await page.getTextContent();
+      const items=c.items.map(i=>({s:String(i.str||''),x:Number(i.transform?.[4]||0),y:Number(i.transform?.[5]||0)}));
+      const groups=[];
       for(const it of items){let g=groups.find(a=>Math.abs(a.y-it.y)<3);if(!g){g={y:it.y,items:[]};groups.push(g)}g.items.push(it)}
-      for(const g of groups){g.items.sort((a,b)=>a.x-b.x);const row=g.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();if(row)lines.push(row)}
+      // Se conserva el orden espacial del informe, pero NO se usan las líneas
+      // como límite de registro: en este PDF las columnas de una misma fila
+      // tienen pequeñas diferencias de coordenada Y.
+      const pageText=groups.sort((a,b)=>b.y-a.y).map(g=>g.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ')).join(' ').replace(/\s+/g,' ').trim();
+      pages.push(pageText);
     }
-    return parseDatapar(lines);
+    return parseDatapar(pages.join(' '));
   }
 
-  function parseDatapar(lines){
-    // El PDF real de Datapar compacta los campos: no hay espacios entre
-    // 961496 y SUR, entre UENO BANK y la cuenta, ni entre cuenta y fecha.
-    // Se usan las marcas estructurales del propio informe y no los espacios.
-    for(const raw of lines){
-      const line=String(raw||'').replace(/\s+/g,' ').trim();
-      if(!/CHEQUE\s*RECHAZADO/i.test(line)||!/DEVUELTO/i.test(line))continue;
-
-      const head=line.match(/^(\d{5,8})(.*?)\s*\((\d+)\)\s*([A-ZÁÉÍÓÚÑ0-9 .&'\-]*?BANK)\s*(C\d+?)(?=\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-      if(!head)continue;
-
-      const titular=head[2].trim();
-      const banco=head[4].replace(/\s+/g,' ').trim();
-      const cuenta=head[5].trim();
-      const rest=line.slice(head[0].length);
-      const dates=[...rest.matchAll(/\d{1,2}\/\d{1,2}\/\d{2,4}/g)].map(x=>x[0]);
-      const moneyMatch=rest.match(/([\d.]+,\d{2})\s*(US\$|USD|GS\$|GS)/i);
-      if(!titular||dates.length<3||!moneyMatch)continue;
-      if(!/CHEQUE\s*RECHAZADO/i.test(rest)||!/DEVUELTO/i.test(rest))continue;
-
-      const valor=parseMoney(moneyMatch[1]);
-      if(!valor)continue;
-      return [{
+  function parseDatapar(text){
+    const t=String(text||'').replace(/\s+/g,' ').trim();
+    const out=[];
+    // Se localizan los registros por la estructura que permanece estable en
+    // Datapar: Nº cheque -> titular -> (código) banco -> cuenta -> 3 fechas ->
+    // importe/moneda -> CHEQUE RECHAZADO -> DEVUELTO.
+    const re=/(\d{5,8})\s*(.*?)\s*\(\d+\)\s*([A-ZÁÉÍÓÚÑ0-9 .&'\-]*?BANK)\s*(C\d+?)(?=\d{1,2}\/\d{1,2}\/\d{2,4})(\d{1,2}\/\d{1,2}\/\d{2,4})\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*([\d.]+,\d{2})\s*(US\$|USD|GS\$|GS)\s*CHEQUE\s*RECHAZADO\s*.*?DEVUELTO/gi;
+    let m;
+    while((m=re.exec(t))){
+      const titular=m[2].replace(/\s+/g,' ').trim();
+      const banco=m[3].replace(/\s+/g,' ').trim();
+      const cuenta=m[4].trim();
+      const valor=parseMoney(m[8]);
+      if(!titular||!banco||!cuenta||!valor)continue;
+      out.push({
         responsable:titular,
         titular,
         ruc_ci_titular:'',
         banco,
         cuenta,
-        numero_cheque:head[1],
-        fecha_emision:parseDate(dates[0]),
-        fecha_recepcion:parseDate(dates[1]),
-        fecha_diferida:parseDate(dates[2]),
-        moneda:/US\$|USD/i.test(moneyMatch[2])?'USD':'GS',
+        numero_cheque:m[1],
+        fecha_emision:parseDate(m[5]),
+        fecha_recepcion:parseDate(m[6]),
+        fecha_diferida:parseDate(m[7]),
+        moneda:/US\$|USD/i.test(m[9])?'USD':'GS',
         valor,
         valor_historico:valor,
         situacion:'DEVUELTO',
         movimiento:'DEVUELTO'
-      }];
+      });
     }
-    return [];
+    const seen=new Set();
+    return out.filter(r=>{const k=`${r.numero_cheque}|${r.valor}|${r.fecha_diferida}`;if(seen.has(k))return false;seen.add(k);return true});
   }
 
   async function load(){
