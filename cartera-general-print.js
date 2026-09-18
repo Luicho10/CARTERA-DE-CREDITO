@@ -198,6 +198,8 @@
       return `<tr>${printColumns.map(c=>`<td class="${c.key==='saldo'?'num':''}">${esc(values[c.key])}</td>`).join('')}</tr>`;
     }).join('');
 
+    const w=window.open('','_blank','width=1200,height=800');
+    if(!w){toast('El navegador bloqueó la ventana de impresión. Permita ventanas emergentes para este sitio.');return;}
     w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title>
       <style>
         @page{size:A4 landscape;margin:8mm}
