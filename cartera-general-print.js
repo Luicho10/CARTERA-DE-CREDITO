@@ -128,6 +128,8 @@
     setGeneralTotals(filtered);
   }
 
+  window.loadGeneralDetails=loadGeneralDetails;
+
   async function loadSelectedDetails(){
     const sel=document.getElementById('portfolioSelect');
     if(sel?.value===GENERAL_ID)return loadGeneralDetails();
