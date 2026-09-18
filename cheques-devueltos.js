@@ -35,28 +35,23 @@
   }
 
   function parseDatapar(groups){
+    // Mismo motor de reconstrucción que 1. Importar PDF.
+    const lines=groups.sort((a,b)=>b.y-a.y)
+      .map(g=>g.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim())
+      .filter(Boolean);
     const out=[];
-    const allItems=groups.flatMap(g=>g.items);
-    const chequeItems=allItems.filter(i=>/^\d{5,8}$/.test(String(i.s||'').trim()) && i.x>=480 && i.x<515);
-    for(const chequeItem of chequeItems){
-      const y=chequeItem.y;
-      const its=allItems.filter(i=>Math.abs(i.y-y)<=5).sort((a,b)=>a.x-b.x);
-      const inRange=(a,b)=>its.filter(i=>i.x>=a&&i.x<b);
-      const textRange=(a,b)=>inRange(a,b).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
-      const responsable=textRange(20,150);
-      const titular=textRange(150,300);
-      const banco=textRange(365,420);
-      const cuenta=textRange(420,480).match(/\d{3,}/)?.[0]||'';
-      const cheque=String(chequeItem.s).trim();
-      const dateText=textRange(510,615);
-      const dates=dateText.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];
-      const valueText=textRange(615,710);
-      const amount=valueText.match(/[\d.]+,\d{2}/)?.[0]||'';
-      const valor=parseMoney(amount);
-      const rejected=/RECHAZADO/i.test(valueText) || /RECHAZADO/i.test(its.map(i=>i.s).join(' '));
-      const currency=/US\$|USD/i.test(dateText+' '+valueText)?'USD':'GS';
-      if(!rejected||!responsable||!titular||!banco||!cuenta||!cheque||dates.length<3||!valor)continue;
-      out.push({responsable,titular,ruc_ci_titular:'',banco,cuenta,numero_cheque:cheque,fecha_emision:parseDate(dates[0]),fecha_recepcion:parseDate(dates[1]),fecha_diferida:parseDate(dates[2]),moneda:currency,valor,valor_historico:valor,situacion:'DEVUELTO',movimiento:'DEVUELTO'});
+    for(const raw of lines){
+      const line=raw.replace(/^\.\s*/,'').replace(/\s+/g,' ').trim();
+      if(!/CHEQUE\s+RECHAZADO/i.test(line)) continue;
+      const m=line.match(/(\(\d+\)\s*UENO\s*BANK)\s+(\d{3,})\s+(\d{5,8})\s+(\d{2}\/\d{2}\/\d{2,4})\s+(\d{2}\/\d{2}\/\d{2,4})\s+(\d{2}\/\d{2}\/\d{2,4})\s+(US\$|USD|GS)\s+([\d.]+,\d{2})\s+CHEQUE\s+RECHAZADO/i);
+      if(!m) continue;
+      const prefix=line.slice(0,line.indexOf(m[1])).trim();
+      const words=prefix.split(/\s+/).filter(Boolean);
+      if(!words.length) continue;
+      const responsable=words.join(' ');
+      const titular=responsable;
+      const valor=parseMoney(m[8]);
+      out.push({responsable,titular,ruc_ci_titular:'',banco:m[1].replace(/\s+/g,' ').trim(),cuenta:m[2],numero_cheque:m[3],fecha_emision:parseDate(m[4]),fecha_recepcion:parseDate(m[5]),fecha_diferida:parseDate(m[6]),moneda:/US\$|USD/i.test(m[7])?'USD':'GS',valor,valor_historico:valor,situacion:'DEVUELTO',movimiento:'DEVUELTO'});
     }
     const seen=new Set();
     return out.filter(r=>{const k=r.numero_cheque+'|'+r.valor+'|'+r.fecha_diferida;if(seen.has(k))return false;seen.add(k);return true});
