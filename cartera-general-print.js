@@ -121,7 +121,7 @@
       return `<tr>
         <td>${esc(portfolioName(x.cartera_id))}</td>
         <td>${esc(x.cliente?.nombre||'')}</td>
-        <td><select class="seller-select" data-doc-id="${id}" onchange="saveDocumentSeller('${id}',this.value)"><option value="">SIN VENDEDOR</option>${(window.vendedores||[]).map(v=>`<option value="${v.id}" ${String(current)===String(v.id)?'selected':''}>${esc(v.nombre)}</option>`).join('')}</select></td>
+        <td><select class="seller-select" data-doc-id="${id}" onchange="saveDocumentSeller('${id}',this.value)">${options}</select></td>
         <td>${esc(x.vendedor_origen||'')}</td>
         <td>${esc(x.cod_interno||'')}</td>
         <td>${esc(x.factura||'')}</td>
