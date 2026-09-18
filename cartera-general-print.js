@@ -96,6 +96,8 @@
     }
 
     const docs=data||[];
+    const activeDocs=docs.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
+    setGeneralTotals(activeDocs);
     const {data:sellerRows,error:sellerError}=await sb.from('cartera_vendedores').select('id,nombre,activo').order('nombre');
     if(sellerError){console.error(sellerError);}
     const sellerList=sellerRows||window.vendedores||[];
@@ -131,7 +133,7 @@
       </tr>`;
     }).join('');
 
-    setGeneralTotals(filtered);
+    setGeneralTotals(filtered.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO'));
   }
 
   window.loadGeneralDetails=loadGeneralDetails;
@@ -164,10 +166,14 @@
 
     const vig=docs.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
     const today=new Date().toISOString().slice(0,10);
-    const usd=vig.filter(x=>portfolioCurrency(x.cartera_id)==='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
-    const gs=vig.filter(x=>portfolioCurrency(x.cartera_id)!=='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
-    const usdV=vig.filter(x=>portfolioCurrency(x.cartera_id)==='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
-    const gsV=vig.filter(x=>portfolioCurrency(x.cartera_id)!=='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
+    const {data:portfolioRows,error:portfolioError}=await sb.from('carteras').select('id,nombre,moneda');
+    if(portfolioError){toast(`No se pudo obtener la moneda de la cartera: ${portfolioError.message}`);return}
+    const currencyById=new Map((portfolioRows||[]).map(x=>[String(x.id),String(x.moneda||'USD').toUpperCase()]));
+    const currencyOf=x=>currencyById.get(String(x.cartera_id))||String(portfolioCurrency(x.cartera_id)||'USD').toUpperCase();
+    const usd=vig.filter(x=>currencyOf(x)==='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
+    const gs=vig.filter(x=>currencyOf(x)!=='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
+    const usdV=vig.filter(x=>currencyOf(x)==='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
+    const gsV=vig.filter(x=>currencyOf(x)!=='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
 
     const title=isGeneral?'CARTERA GENERAL':'CARTERA '+portfolioName(id);
     const summary=isGeneral
@@ -177,7 +183,7 @@
     const w=window.open('','_blank','width=1200,height=800');
     if(!w){toast('El navegador bloqueo la ventana de impresion. Permita ventanas emergentes para este sitio.');return}
     const rowsHtml=vig.map(x=>{
-      const cur=portfolioCurrency(x.cartera_id);
+      const cur=currencyOf(x);
       return `<tr>
         ${isGeneral?`<td>${esc(portfolioName(x.cartera_id))}</td>`:''}
         <td>${esc(x.cliente?.nombre||'')}</td>
