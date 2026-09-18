@@ -161,26 +161,41 @@
     const usdV=vig.filter(x=>currencyOf(x)==='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
     const gsV=vig.filter(x=>currencyOf(x)!=='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
 
+    // La impresión respeta exactamente las columnas visibles en pantalla.
+    // La configuración se guarda por el selector ⚙ de Carteras.
+    let visible={};
+    try{visible=JSON.parse(localStorage.getItem('cartera_columnas_visibles_v1')||'{}')||{}}catch(e){visible={}};
+    const show=i=>visible[i]!==false;
+
     const title=isGeneral?'CARTERA GENERAL':'CARTERA '+portfolioName(id);
     const summary=isGeneral
       ?`USD: ${fmt(usd,'USD')} · Vencido USD: ${fmt(usdV,'USD')} · Gs.: ${fmt(gs,'GS')} · Vencido Gs.: ${fmt(gsV,'GS')}`
       :`${portfolioCurrency(id)==='USD'?'USD':'Gs.'}: ${fmt(vig.reduce((a,x)=>a+Number(x.saldo||0),0),portfolioCurrency(id))} · Vencido: ${fmt(vig.filter(x=>x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0),portfolioCurrency(id))}`;
 
-    const w=window.open('','_blank','width=1200,height=800');
-    if(!w){toast('El navegador bloqueo la ventana de impresion. Permita ventanas emergentes para este sitio.');return}
+    const printColumns=[];
+    if(show(1))printColumns.push({key:'cartera',label:'Cartera'});
+    if(show(2))printColumns.push({key:'cliente',label:'Cliente'});
+    if(show(3))printColumns.push({key:'vendedor_actual',label:'Vendedor actual'});
+    if(show(4))printColumns.push({key:'vendedor_origen',label:'Vendedor origen'});
+    if(show(5))printColumns.push({key:'factura',label:'Factura / Nro. Documento'});
+    if(show(6))printColumns.push({key:'vencimiento',label:'Venc.'});
+    if(show(7))printColumns.push({key:'saldo',label:'Saldo'});
+    if(show(8))printColumns.push({key:'estado',label:'Estado'});
+
+    const headerHtml=printColumns.map(c=>`<th>${esc(c.label)}</th>`).join('');
     const rowsHtml=vig.map(x=>{
       const cur=currencyOf(x);
-      return `<tr>
-        ${isGeneral?`<td>${esc(portfolioName(x.cartera_id))}</td>`:''}
-        <td>${esc(x.cliente?.nombre||'')}</td>
-        <td>${esc(x.vendedor?.nombre||'SIN VENDEDOR')}</td>
-        <td>${esc(x.vendedor_origen||'')}</td>
-        <td>${esc(x.cod_interno||'')}</td>
-        <td>${esc(x.factura||'')}</td>
-        <td>${showDate(x.vencimiento)}</td>
-        <td class="num">${fmt(x.saldo,cur)}</td>
-        <td>${esc(x.estado||'')}</td>
-      </tr>`;
+      const values={
+        cartera:portfolioName(x.cartera_id),
+        cliente:x.cliente?.nombre||'',
+        vendedor_actual:x.vendedor?.nombre||'SIN VENDEDOR',
+        vendedor_origen:x.vendedor_origen||'',
+        factura:x.factura||'',
+        vencimiento:showDate(x.vencimiento),
+        saldo:fmt(x.saldo,cur),
+        estado:x.estado||''
+      };
+      return `<tr>${printColumns.map(c=>`<td class="${c.key==='saldo'?'num':''}">${esc(values[c.key])}</td>`).join('')}</tr>`;
     }).join('');
 
     w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title>
@@ -199,8 +214,7 @@
       <div class="head"><div><h1>${esc(title)}</h1><p>Detalle de cartera de crédito</p></div><div><strong>Fecha: ${new Date().toLocaleDateString('es-PY')}</strong></div></div>
       <div class="summary">${esc(summary)} · Documentos: ${vig.length}</div>
       <table><thead><tr>
-        ${isGeneral?'<th>Cartera</th>':''}
-        <th>Cliente</th><th>Vendedor actual</th><th>Vendedor origen</th><th>Factura / Nro. Documento</th><th>Venc.</th><th>Saldo</th><th>Estado</th>
+        ${headerHtml}
       </tr></thead><tbody>${rowsHtml}</tbody></table>
       <div class="foot">Reporte generado desde CARTERA DE CRÉDITO.</div>
       <script>window.onload=function(){window.focus();window.print();setTimeout(function(){window.close()},500)};<\/script>
