@@ -64,10 +64,12 @@
   function setGeneralTotals(rows){
     const box=ensureGeneralTotals();
     if(!box)return;
-    const usd=rows.filter(x=>x.moneda==='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
-    const gs=rows.filter(x=>x.moneda!=='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
-    const usdV=rows.filter(x=>x.moneda==='USD'&&x.vencimiento&&x.vencimiento<new Date().toISOString().slice(0,10)).reduce((a,x)=>a+Number(x.saldo||0),0);
-    const gsV=rows.filter(x=>x.moneda!=='USD'&&x.vencimiento&&x.vencimiento<new Date().toISOString().slice(0,10)).reduce((a,x)=>a+Number(x.saldo||0),0);
+    const currency=x=>String(x.moneda||portfolioCurrency(x.cartera_id)||'USD').toUpperCase();
+    const usd=rows.filter(x=>currency(x)==='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
+    const gs=rows.filter(x=>currency(x)!=='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
+    const today=new Date().toISOString().slice(0,10);
+    const usdV=rows.filter(x=>currency(x)==='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
+    const gsV=rows.filter(x=>currency(x)!=='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
     box.innerHTML=`
       <div class="gt-item"><small>TOTAL USD</small><strong>${fmt(usd,'USD')}</strong></div>
       <div class="gt-item"><small>VENCIDO USD</small><strong>${fmt(usdV,'USD')}</strong></div>
