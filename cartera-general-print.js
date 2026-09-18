@@ -84,43 +84,50 @@
     if(box)box.style.display='none';
   }
 
+  function aggregateGeneralRows(docs){
+    const groups=new Map();
+    const today=new Date().toISOString().slice(0,10);
+    const sellerNameById=new Map((window.vendedores||[]).map(v=>[String(v.id),String(v.nombre||'')]));
+    const currencyOf=x=>String(x.moneda||portfolioCurrency(x.cartera_id)||'USD').toUpperCase()==='USD'?'USD':'GS';
+    docs.forEach(x=>{
+      const currency=currencyOf(x);
+      const clientCode=String(x.cliente?.codigo||x.codigo_cliente||'').trim();
+      const clientName=String(x.cliente?.nombre||x.cliente_nombre||x.cliente||'').trim();
+      const clientKey=clientCode||norm(clientName);
+      const key=clientKey+'|'+currency;
+      if(!groups.has(key))groups.set(key,{id:key,cliente:clientName,codigo:clientCode,moneda:currency,saldo:0,documentos:0,vencidos:0,sellers:new Set(),origins:new Set()});
+      const g=groups.get(key);
+      g.saldo+=Number(x.saldo||0);
+      g.documentos+=1;
+      if(x.vencimiento&&x.vencimiento<today)g.vencidos+=Number(x.saldo||0);
+      const sellerId=x.vendedor_actual_id||'';
+      const sellerName=sellerNameById.get(String(sellerId))||'';
+      if(sellerName)g.sellers.add(sellerName);
+      else if(sellerId)g.sellers.add(String(sellerId));
+      const origin=String(x.vendedor_origen||'').trim();
+      if(origin&&origin.toUpperCase()!=='SIN INFORMAR')g.origins.add(origin);
+    });
+    return [...groups.values()].sort((a,b)=>a.moneda.localeCompare(b.moneda)||a.cliente.localeCompare(b.cliente)).map(g=>{
+      const sellers=[...g.sellers],origins=[...g.origins];
+      const hasVencido=g.vencidos>0,hasVigente=(g.saldo-g.vencidos)>0;
+      const estado=hasVencido&&hasVigente?'MIXTO':hasVencido?'VENCIDO':'VIGENTE';
+      return {...g,cartera:g.moneda==='USD'?'CARTERA GENERAL USD':'CARTERA GENERAL GS.',vendedor_actual:sellers.length===1?sellers[0]:sellers.length>1?'VARIOS':'SIN VENDEDOR',vendedor_origen:origins.length===1?origins[0]:origins.length>1?'VARIOS':'SIN INFORMAR',factura:g.documentos===1?'1 documento':g.documentos+' documentos',vencimiento:estado,estado};
+    });
+  }
   async function loadGeneralDetails(){
     const q=(document.getElementById('filterText')?.value||'').trim().toLowerCase();
     const sellerValue=document.getElementById('sellerFilter')?.value||'';
-    const {data,error}=await sb.from('documentos_cartera')
-      .select('*,cliente:cartera_clientes(nombre,codigo),vendedor:cartera_vendedores(id,nombre)')
-      .order('cartera_id').order('vencimiento');
-    if(error){
-      console.error(error);
-      toast('No se pudo cargar la cartera general: '+error.message);
-      return;
-    }
-    const docs=data||[];
-    const active=docs.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
-    const effective=x=>x.vendedor_actual_id||'';
-    const filtered=active.filter(x=>{
-      const sellerOk=!sellerValue || String(effective(x))===String(sellerValue);
-      const text=`${x.cliente?.nombre||''} ${x.cliente?.codigo||''} ${x.cod_interno||''} ${x.factura||''} ${x.vendedor_origen||''} ${portfolioName(x.cartera_id)}`.toLowerCase();
-      return sellerOk&&(!q||text.includes(q));
-    });
+    const {data,error}=await sb.from('documentos_cartera').select('*,cliente:cartera_clientes(nombre,codigo),vendedor:cartera_vendedores(id,nombre)').order('cartera_id').order('vencimiento');
+    if(error){console.error(error);toast('No se pudo cargar la cartera general: '+error.message);return;}
+    const docs=(data||[]).filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
+    const sellerFiltered=docs.filter(x=>!sellerValue||String(x.vendedor_actual_id||'')===String(sellerValue));
+    const grouped=aggregateGeneralRows(sellerFiltered);
+    const filtered=grouped.filter(x=>{if(!q)return true;const text=(x.cliente+' '+x.codigo+' '+x.vendedor_actual+' '+x.vendedor_origen+' '+x.cartera+' '+x.factura).toLowerCase();return text.includes(q)});
     const head=document.querySelector('#view-carteras .table-wrap table thead');
     if(head)head.innerHTML='<tr><th>Cartera</th><th>Cliente</th><th>Vendedor actual</th><th>Vendedor origen</th><th>Factura / Nro. Documento</th><th>Venc.</th><th>Saldo</th><th>Estado</th></tr>';
     const body=document.getElementById('detailBody');
-    body.innerHTML=filtered.map(x=>{
-      const current=effective(x);
-      const options='<option value="">SIN VENDEDOR</option>'+(window.vendedores||[]).map(v=>`<option value="${v.id}" ${String(current)===String(v.id)?'selected':''}>${esc(v.nombre)}</option>`).join('');
-      return `<tr>
-        <td>${esc(portfolioName(x.cartera_id))}</td>
-        <td>${esc(x.cliente?.nombre||'')}</td>
-        <td><select class="seller-select" data-doc-id="${x.id}" onchange="saveDocumentSeller('${x.id}',this.value)">${options}</select></td>
-        <td>${esc(x.vendedor_origen||'')}</td>
-        <td>${esc(x.factura||'')}</td>
-        <td>${showDate(x.vencimiento)}</td>
-        <td>${fmt(x.saldo,portfolioCurrency(x.cartera_id))}</td>
-        <td>${esc(x.estado||'')}</td>
-      </tr>`;
-    }).join('');
-    setGeneralTotals(active);
+    body.innerHTML=filtered.map(x=>'<tr><td>'+esc(x.cartera)+'</td><td>'+esc(x.cliente||'')+'</td><td>'+esc(x.vendedor_actual)+'</td><td>'+esc(x.vendedor_origen)+'</td><td>'+esc(x.factura)+'</td><td>'+esc(x.vencimiento)+'</td><td>'+fmt(x.saldo,x.moneda)+'</td><td>'+esc(x.estado)+'</td></tr>').join('');
+    setGeneralTotals(sellerFiltered);
   }
   window.loadGeneralDetails=loadGeneralDetails;
 
@@ -150,7 +157,8 @@
       docs=data||[];
     }
 
-    const vig=docs.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
+    const vigRaw=docs.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
+    const vig=isGeneral?aggregateGeneralRows(vigRaw):vigRaw;
     const today=new Date().toISOString().slice(0,10);
     const {data:portfolioRows,error:portfolioError}=await sb.from('carteras').select('id,nombre,moneda');
     if(portfolioError){toast(`No se pudo obtener la moneda de la cartera: ${portfolioError.message}`);return}
@@ -211,20 +219,19 @@
 
     const headerHtml=printColumns.map(c=>`<th>${esc(c.label)}</th>`).join('');
     const rowsHtml=vig.map(x=>{
-      const cur=currencyOf(x);
+      const cur=isGeneral?x.moneda:currencyOf(x);
       const values={
-        cartera:portfolioName(x.cartera_id),
-        cliente:x.cliente?.nombre||'',
-        vendedor_actual:x.vendedor?.nombre||'SIN VENDEDOR',
-        vendedor_origen:x.vendedor_origen||'',
-        factura:x.factura||'',
-        vencimiento:showDate(x.vencimiento),
+        cartera:isGeneral?(x.moneda==='USD'?'CARTERA GENERAL USD':'CARTERA GENERAL GS.'):portfolioName(x.cartera_id),
+        cliente:isGeneral?(x.cliente||''):x.cliente?.nombre||'',
+        vendedor_actual:isGeneral?(x.vendedor_actual||'SIN VENDEDOR'):x.vendedor?.nombre||'SIN VENDEDOR',
+        vendedor_origen:isGeneral?(x.vendedor_origen||'SIN INFORMAR'):x.vendedor_origen||'',
+        factura:isGeneral?(x.factura||''):x.factura||'',
+        vencimiento:isGeneral?(x.vencimiento||''):showDate(x.vencimiento),
         saldo:fmt(x.saldo,cur),
-        estado:x.estado||''
+        estado:isGeneral?(x.estado||''):x.estado||''
       };
       return `<tr>${printColumns.map(c=>`<td class="${c.key==='saldo'?'num':''}">${esc(values[c.key])}</td>`).join('')}</tr>`;
     }).join('');
-
     const w=window.open('','_blank','width=1200,height=800');
     if(!w){toast('El navegador bloqueó la ventana de impresión. Permita ventanas emergentes para este sitio.');return;}
     w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title>
