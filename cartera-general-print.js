@@ -165,22 +165,41 @@
     // La configuración se guarda por el selector ⚙ de Carteras.
     let visible={};
     try{visible=JSON.parse(localStorage.getItem('cartera_columnas_visibles_v1')||'{}')||{}}catch(e){visible={}};
-    const show=i=>visible[i]!==false;
-
     const title=isGeneral?'CARTERA GENERAL':'CARTERA '+portfolioName(id);
     const summary=isGeneral
       ?`USD: ${fmt(usd,'USD')} · Vencido USD: ${fmt(usdV,'USD')} · Gs.: ${fmt(gs,'GS')} · Vencido Gs.: ${fmt(gsV,'GS')}`
       :`${portfolioCurrency(id)==='USD'?'USD':'Gs.'}: ${fmt(vig.reduce((a,x)=>a+Number(x.saldo||0),0),portfolioCurrency(id))} · Vencido: ${fmt(vig.filter(x=>x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0),portfolioCurrency(id))}`;
 
-    const printColumns=[];
-    if(show(1))printColumns.push({key:'cartera',label:'Cartera'});
-    if(show(2))printColumns.push({key:'cliente',label:'Cliente'});
-    if(show(3))printColumns.push({key:'vendedor_actual',label:'Vendedor actual'});
-    if(show(4))printColumns.push({key:'vendedor_origen',label:'Vendedor origen'});
-    if(show(5))printColumns.push({key:'factura',label:'Factura / Nro. Documento'});
-    if(show(6))printColumns.push({key:'vencimiento',label:'Venc.'});
-    if(show(7))printColumns.push({key:'saldo',label:'Saldo'});
-    if(show(8))printColumns.push({key:'estado',label:'Estado'});
+    /*
+      La impresión debe usar la MISMA selección del selector ⚙ de la pantalla.
+      Las claves de localStorage son los nombres reales de las columnas,
+      no posiciones numéricas. Además, cada vista solo imprime las columnas
+      que realmente existen en esa vista.
+    */
+    const show=key=>visible[key]!==false;
+
+    const availableColumns=isGeneral
+      ? [
+          {key:'cartera',label:'Cartera'},
+          {key:'cliente',label:'Cliente'},
+          {key:'vendedor_actual',label:'Vendedor actual'},
+          {key:'vendedor_origen',label:'Vendedor origen'},
+          {key:'factura',label:'Factura / Nro. Documento'},
+          {key:'vencimiento',label:'Venc.'},
+          {key:'saldo',label:'Saldo'},
+          {key:'estado',label:'Estado'}
+        ]
+      : [
+          {key:'cliente',label:'Cliente'},
+          {key:'vendedor_actual',label:'Vendedor actual'},
+          {key:'vendedor_origen',label:'Vendedor origen'},
+          {key:'factura',label:'Factura / Nro. Documento'},
+          {key:'vencimiento',label:'Venc.'},
+          {key:'saldo',label:'Saldo Cuenta'},
+          {key:'estado',label:'Estado'}
+        ];
+
+    const printColumns=availableColumns.filter(c=>show(c.key));
 
     const headerHtml=printColumns.map(c=>`<th>${esc(c.label)}</th>`).join('');
     const rowsHtml=vig.map(x=>{
