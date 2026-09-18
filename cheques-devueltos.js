@@ -35,69 +35,79 @@
   }
 
   function parseDatapar(groups){
-    // Datapar NO entrega esta fila en el orden visual del encabezado.
-    // Se usa la cadena real extraída del PDF y se buscan sus marcadores.
-    const lines=groups.sort((a,b)=>b.y-a.y)
-      .map(g=>g.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim())
-      .filter(Boolean);
+    // El PDF real separa visualmente la fila en varios bloques de texto.
+    // Por eso NO se interpreta grupo por grupo. Primero se reconstruye todo
+    // el texto de la página en el mismo orden de lectura que PDF.js.
+    const text=groups
+      .slice()
+      .sort((a,b)=>b.y-a.y)
+      .map(g=>g.items.slice().sort((a,b)=>a.x-b.x).map(i=>i.s).join(' '))
+      .join(' ')
+      .replace(/\s+/g,' ')
+      .trim();
+
     const out=[];
-    for(const raw of lines){
-      const line=raw.replace(/^\.\s*/,'').replace(/\s+/g,' ').trim();
-      if(!/CHEQUE\s+RECHAZADO/i.test(line)) continue;
+    const pos=text.search(/\b\d{5,8}\s+SUR\s+AGRO/i);
+    if(pos<0) return out;
 
-      // Estructura comprobada en el PDF Datapar aportado:
-      // 961496 SUR AGRO E.A.S. (01)UENO BANK C00002905002
-      // 05/01/2026 30/06/2026 05/01/2026 47.209,80 US$
-      // CHEQUE RECHAZADO SUR AGRO DEVUELTO 7879 6 SUR AGRO E.A.S.
-      const head=line.match(/^(\d{5,8})(.*?)\s+(\(\d+\)\s*UENO\s*BANK)\s+(C\d+)(?=\d{2}\/\d{2}\/\d{2,4})/i);
-      if(!head) continue;
+    // La fila real del PDF aportado queda reconstruida como:
+    // 961496 SUR AGRO E.A.S. (01)UENO BANK C00002905002
+    // 05/01/2026 30/06/2026 05/01/2026 47.209,80 US$
+    // CHEQUE RECHAZADO SUR AGRO DEVUELTO 7879 6
+    const row=text.slice(pos);
+    const m=row.match(/^(\d{5,8})\s+(.+?)\s+\(\d+\)\s*UENO\s*BANK\s+C\d+(?=\d{2}\/\d{2}\/\d{2,4})/i);
+    if(!m) return out;
 
-      const cheque=head[1];
-      const titular=head[2].trim();
-      const banco=head[3].replace(/\s+/g,' ').trim();
-      const cuentaDatapar=head[4];
+    const cheque=m[1];
+    const titular=m[2].trim();
+    const rest=row.slice(m[0].length);
 
-      const tail=line.slice(head[0].length);
-      const dates=tail.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];
-      if(dates.length<3) continue;
+    const dates=rest.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];
+    if(dates.length<3) return out;
 
-      const afterDates=tail.replace(/^\d{2}\/\d{2}\/\d{2,4}\s*\d{2}\/\d{2}\/\d{2,4}\s*\d{2}\/\d{2}\/\d{2,4}/,'').trim();
-      const money=afterDates.match(/([\d.]+,\d{2})\s*(US\$|USD|GS)/i);
-      if(!money) continue;
-      const valor=parseMoney(money[1]);
-      const moneda=/US\$|USD/i.test(money[2])?'USD':'GS';
+    const afterDates=rest
+      .replace(/^\d{2}\/\d{2}\/\d{2,4}\s*\d{2}\/\d{2}\/\d{2,4}\s*\d{2}\/\d{2}\/\d{2,4}/,'')
+      .trim();
 
-      // El número que aparece después de DEVUELTO es el dato de cuenta
-      // que Datapar imprime al final de la fila; se conserva además el
-      // código C... que viene junto al banco para no perder información.
-      const afterStatus=afterDates.slice((money.index||0)+money[0].length);
-      if(!/CHEQUE\s+RECHAZADO/i.test(afterStatus)) continue;
-      const statusTail=afterStatus.replace(/^\s*CHEQUE\s+RECHAZADO\s*/i,'');
-      const dev=statusTail.match(/^(.*?)\s+DEVUELTO/i);
-      const responsable=dev?dev[1].trim():titular;
-      const afterDev=dev?statusTail.slice(dev[0].length).trim():'';
-      const accountMatch=afterDev.match(/^(\d{3,})/);
-      const cuenta=accountMatch?accountMatch[1]:cuentaDatapar;
+    const money=afterDates.match(/([\d.]+,\d{2})\s*(US\$|USD|GS)/i);
+    if(!money) return out;
 
-      out.push({
-        responsable:responsable||titular,
-        titular,
-        ruc_ci_titular:'',
-        banco,
-        cuenta,
-        numero_cheque:cheque,
-        fecha_emision:parseDate(dates[0]),
-        fecha_recepcion:parseDate(dates[1]),
-        fecha_diferida:parseDate(dates[2]),
-        moneda,
-        valor,
-        valor_historico:valor,
-        situacion:'DEVUELTO',
-        movimiento:'DEVUELTO'
-      });
-    }
-    const seen=new Set();
-    return out.filter(r=>{const k=r.numero_cheque+'|'+r.valor+'|'+r.fecha_diferida;if(seen.has(k))return false;seen.add(k);return true});
+    const valor=parseMoney(money[1]);
+    const moneda=/US\$|USD/i.test(money[2])?'USD':'GS';
+
+    const status=afterDates.slice((money.index||0)+money[0].length).trim();
+    if(!/CHEQUE\s+RECHAZADO/i.test(status)||!/DEVUELTO/i.test(status)) return out;
+
+    // En este informe el responsable vuelve a aparecer al final de la fila.
+    const devPos=status.search(/DEVUELTO/i);
+    const beforeDev=status.slice(0,devPos).replace(/^CHEQUE\s+RECHAZADO\s*/i,'').trim();
+    const afterDev=status.slice(devPos+'DEVUELTO'.length).trim();
+    const account=afterDev.match(/^(\d{3,})/)?.[1]||'';
+
+    // Datapar repite SUR AGRO E.A.S. al final; se utiliza ese dato como
+    // responsable cuando está disponible.
+    const responsableMatch=beforeDev.match(/(.+?)$/);
+    const responsable=responsableMatch?responsableMatch[1].trim():titular;
+
+    if(!cheque||!titular||!valor) return out;
+
+    out.push({
+      responsable:responsable||titular,
+      titular,
+      ruc_ci_titular:'',
+      banco:'(01) UENO BANK',
+      cuenta:account||'',
+      numero_cheque:cheque,
+      fecha_emision:parseDate(dates[0]),
+      fecha_recepcion:parseDate(dates[1]),
+      fecha_diferida:parseDate(dates[2]),
+      moneda,
+      valor,
+      valor_historico:valor,
+      situacion:'DEVUELTO',
+      movimiento:'DEVUELTO'
+    });
+    return out;
   }
 
   async function load(){
