@@ -35,59 +35,31 @@
   }
 
   function parseDatapar(groups){
-    /*
-      Se usa la posición X de las columnas del informe real de Datapar.
-      En el PDF probado las columnas están en:
-      Responsable 30 | Titular 172 | Banco 376 | Cuenta 440 |
-      Cheque 494 | Emisión 525 | Recepción 562 | Diferido 590 |
-      Valor 647 | Situación 722 | Movimiento 758 | Vend. 798.
-      Esto evita interpretar C00002905002 como cuenta: en realidad aparece
-      en la columna Movimiento. La cuenta real del registro es 7879.
-    */
     const out=[];
-    for(const g of groups){
-      const its=g.items;
-      const rowText=its.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
-      if(!/\d{5,8}/.test(rowText))continue;
-      // Datapar superpone parte de Situación/Movimiento sobre Valor en este informe.
-      // La fila sigue siendo válida cuando contiene CHEQUE RECHAZADO; el encabezado
-      // del PDF ya fue validado como informe de Situación DEVUELTO.
-
+    const allItems=groups.flatMap(g=>g.items);
+    const chequeItems=allItems.filter(i=>/^\d{5,8}$/.test(String(i.s||'').trim()) && i.x>=480 && i.x<515);
+    for(const chequeItem of chequeItems){
+      const y=chequeItem.y;
+      const its=allItems.filter(i=>Math.abs(i.y-y)<=5).sort((a,b)=>a.x-b.x);
       const inRange=(a,b)=>its.filter(i=>i.x>=a&&i.x<b);
       const textRange=(a,b)=>inRange(a,b).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
       const responsable=textRange(20,150);
       const titular=textRange(150,300);
       const banco=textRange(365,420);
       const cuenta=textRange(420,480).match(/\d{3,}/)?.[0]||'';
-      const cheque=textRange(480,515).match(/^\d{5,8}$/)?.[0]||textRange(480,515).match(/\d{5,8}/)?.[0]||'';
+      const cheque=String(chequeItem.s).trim();
       const dateText=textRange(510,615);
       const dates=dateText.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];
       const valueText=textRange(615,710);
       const amount=valueText.match(/[\d.]+,\d{2}/)?.[0]||'';
       const valor=parseMoney(amount);
+      const rejected=/RECHAZADO/i.test(valueText) || /RECHAZADO/i.test(its.map(i=>i.s).join(' '));
       const currency=/US\$|USD/i.test(dateText+' '+valueText)?'USD':'GS';
-      const rejected=/RECHAZADO/i.test(rowText);
-      if(!responsable||!titular||!banco||!cuenta||!cheque||dates.length<3||!valor||!rejected)continue;
-
-      out.push({
-        responsable,
-        titular,
-        ruc_ci_titular:'',
-        banco,
-        cuenta,
-        numero_cheque:cheque,
-        fecha_emision:parseDate(dates[0]),
-        fecha_recepcion:parseDate(dates[1]),
-        fecha_diferida:parseDate(dates[2]),
-        moneda:currency,
-        valor,
-        valor_historico:valor,
-        situacion:'DEVUELTO',
-        movimiento:'DEVUELTO'
-      });
+      if(!rejected||!responsable||!titular||!banco||!cuenta||!cheque||dates.length<3||!valor)continue;
+      out.push({responsable,titular,ruc_ci_titular:'',banco,cuenta,numero_cheque:cheque,fecha_emision:parseDate(dates[0]),fecha_recepcion:parseDate(dates[1]),fecha_diferida:parseDate(dates[2]),moneda:currency,valor,valor_historico:valor,situacion:'DEVUELTO',movimiento:'DEVUELTO'});
     }
     const seen=new Set();
-    return out.filter(r=>{const k=`${r.numero_cheque}|${r.valor}|${r.fecha_diferida}`;if(seen.has(k))return false;seen.add(k);return true});
+    return out.filter(r=>{const k=r.numero_cheque+'|'+r.valor+'|'+r.fecha_diferida;if(seen.has(k))return false;seen.add(k);return true});
   }
 
   async function load(){
