@@ -86,58 +86,43 @@
 
   async function loadGeneralDetails(){
     const q=(document.getElementById('filterText')?.value||'').trim().toLowerCase();
-    const seller=document.getElementById('sellerFilter');
-    const sellerValue=seller?.value||'';
+    const sellerValue=document.getElementById('sellerFilter')?.value||'';
     const {data,error}=await sb.from('documentos_cartera')
-      .select('*,cliente:cartera_clientes(id,nombre,codigo,vendedor_actual_id),vendedor:cartera_vendedores(nombre)')
+      .select('*,cliente:cartera_clientes(nombre,codigo),vendedor:cartera_vendedores(id,nombre)')
       .order('cartera_id').order('vencimiento');
     if(error){
       console.error(error);
-      toast(`No se pudo cargar la cartera general: ${error.message}`);
+      toast('No se pudo cargar la cartera general: '+error.message);
       return;
     }
-
     const docs=data||[];
-    const activeDocs=docs.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
-    setGeneralTotals(activeDocs);
-    const {data:sellerRows,error:sellerError}=await sb.from('cartera_vendedores').select('id,nombre,activo').order('nombre');
-    if(sellerError){console.error(sellerError);}
-    const sellerList=sellerRows||window.vendedores||[];
-    const effective=x=>x.vendedor_actual_id||x.cliente?.vendedor_actual_id||'';
-    const filtered=docs.filter(x=>{
-      const ev=effective(x);
-      const sellerOk=!sellerValue || (sellerValue==='__none__'?!ev:String(ev)===String(sellerValue));
+    const active=docs.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO');
+    const effective=x=>x.vendedor_actual_id||'';
+    const filtered=active.filter(x=>{
+      const sellerOk=!sellerValue || String(effective(x))===String(sellerValue);
       const text=`${x.cliente?.nombre||''} ${x.cliente?.codigo||''} ${x.cod_interno||''} ${x.factura||''} ${x.vendedor_origen||''} ${portfolioName(x.cartera_id)}`.toLowerCase();
       return sellerOk&&(!q||text.includes(q));
     });
-
-    const body=document.getElementById('detailBody');
     const head=document.querySelector('#view-carteras .table-wrap table thead');
     if(head)head.innerHTML='<tr><th>Cartera</th><th>Cliente</th><th>Vendedor actual</th><th>Vendedor origen</th><th>Cod. Interno</th><th>Factura / Nro. Documento</th><th>Venc.</th><th>Saldo</th><th>Estado</th></tr>';
-
+    const body=document.getElementById('detailBody');
     body.innerHTML=filtered.map(x=>{
-      const id=x.id;
       const current=effective(x);
-      const cartera=portfolioCurrency(x.cartera_id);
-      const currentSellerName=x.vendedor?.nombre||'';
-      const hasCurrent=sellerList.some(v=>String(v.id)===String(current));
-      const options='<option value="">SIN VENDEDOR</option>'+sellerList.map(v=>`<option value="${v.id}" ${String(current)===String(v.id)?'selected':''}>${esc(v.nombre)}${v.activo===false?' (INACTIVO)':''}</option>`).join('')+(current&&!hasCurrent?`<option value="${current}" selected>${esc(currentSellerName||'VENDEDOR ACTUAL')}</option>`:'');
+      const options='<option value="">SIN VENDEDOR</option>'+(window.vendedores||[]).map(v=>`<option value="${v.id}" ${String(current)===String(v.id)?'selected':''}>${esc(v.nombre)}</option>`).join('');
       return `<tr>
         <td>${esc(portfolioName(x.cartera_id))}</td>
         <td>${esc(x.cliente?.nombre||'')}</td>
-        <td><select class="seller-select" data-doc-id="${id}" onchange="saveDocumentSeller('${id}',this.value)">${options}</select></td>
+        <td><select class="seller-select" data-doc-id="${x.id}" onchange="saveDocumentSeller('${x.id}',this.value)">${options}</select></td>
         <td>${esc(x.vendedor_origen||'')}</td>
         <td>${esc(x.cod_interno||'')}</td>
         <td>${esc(x.factura||'')}</td>
         <td>${showDate(x.vencimiento)}</td>
-        <td>${fmt(x.saldo,cartera)}</td>
+        <td>${fmt(x.saldo,portfolioCurrency(x.cartera_id))}</td>
         <td>${esc(x.estado||'')}</td>
       </tr>`;
     }).join('');
-
-    setGeneralTotals(filtered.filter(x=>String(x.estado||'').toUpperCase()!=='ANULADO'));
+    setGeneralTotals(active);
   }
-
   window.loadGeneralDetails=loadGeneralDetails;
 
   async function loadSelectedDetails(){
