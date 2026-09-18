@@ -35,66 +35,85 @@
   }
 
   function parseDatapar(groups){
-    // Reconstrucción igual a "1. Importar PDF".
-    const text=groups.slice().sort((a,b)=>b.y-a.y)
-      .map(g=>g.items.slice().sort((a,b)=>a.x-b.x).map(i=>i.s).join(' '))
-      .join(' ').replace(/\s+/g,' ').trim();
+    /*
+      LECTOR REAL DATAPAR:
+      Se utiliza la posición X de cada columna. El texto de la columna
+      Situación/Movimiento puede salir superpuesto (por ejemplo
+      "SURD EAVGORLOVIDO"), por lo que NO se exige encontrar la palabra
+      DEVUELTO dentro de ese texto.
+    */
+    const clean=a=>a.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
 
-    // Se toma la primera fila que tiene la estructura de un cheque.
-    const rowMatch=text.match(/\b(\d{5,8})\s+(.+?)\s+\(\d+\)\s*UENO\s*BANK\s+C\d+(?=\d{2}\/\d{2}\/\d{2,4})[\s\S]*?(?=Resumen por Situación|Resumen por Responsable|Resumen por Sucursal|$)/i);
-    if(!rowMatch)return [];
+    const candidates=groups.filter(g=>{
+      const items=g.items||[];
+      return items.some(i=>/^\d{5,8}$/.test(String(i.s||'').trim())) &&
+             items.some(i=>/^\d{2}\/\d{2}\/\d{2,4}$/.test(String(i.s||'').trim())) &&
+             items.some(i=>/CHEQUE/i.test(String(i.s||'')));
+    });
 
-    const row=rowMatch[0].trim();
-    const cheque=rowMatch[1];
-    const titular=rowMatch[2].trim();
-    const bankMatch=row.match(/(\(\d+\)\s*UENO\s*BANK)/i);
-    const banco=bankMatch?bankMatch[1].replace(/\s+/g,' ').trim():'UENO BANK';
+    const out=[];
+    for(const g of candidates){
+      const items=(g.items||[]).slice().sort((a,b)=>a.x-b.x);
+      const byX=(from,to)=>items.filter(i=>i.x>=from&&i.x<to);
 
-    const dates=row.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];
-    if(dates.length<3)return [];
+      const chequeItem=items.find(i=>/^\d{5,8}$/.test(String(i.s||'').trim()) && i.x>=480 && i.x<516);
+      if(!chequeItem)continue;
 
-    // IMPORTANTE: en el PDF real el US$ aparece DESPUÉS de DEVUELTO,
-    // no inmediatamente después del valor.
-    const afterDates=row.slice(row.indexOf(dates[2])+dates[2].length);
-    const money=afterDates.match(/([\d.]+,\d{2})\s+CHEQUE\s+RECHAZADO/i);
-    if(!money)return [];
+      const cheque=String(chequeItem.s).trim();
 
-    const valor=parseMoney(money[1]);
-    if(!valor)return [];
+      // Columnas comprobadas contra el PDF Datapar aportado.
+      const responsable=clean(byX(25,165));
+      const titular=clean(byX(165,305));
+      const banco=clean(byX(365,438));
+      const cuenta=clean(byX(432,488));
+      const emision=clean(byX(512,548));
+      const recepcion=clean(byX(548,582));
+      const diferida=clean(byX(582,615));
+      const moneda=clean(byX(615,634));
+      const valorTxt=clean(byX(630,664));
+      const situacion=clean(byX(660,758));
 
-    const statusPos=afterDates.search(/CHEQUE\s+RECHAZADO/i);
-    const status=afterDates.slice(statusPos);
-    if(!/DEVUELTO/i.test(status))return [];
+      if(!responsable||!titular||!banco||!cheque||!valorTxt)continue;
+      if(!/UENO\s*BANK/i.test(banco))continue;
+      if(!/CHEQUE\s+RECHAZADO/i.test(situacion))continue;
 
-    const dev=status.match(/DEVUELTO\s+(\d{3,})\s+(US\$|USD|GS)/i);
-    if(!dev)return [];
+      const valorMatch=valorTxt.match(/[\d.]+,\d{2}/);
+      if(!valorMatch)continue;
+      const valor=parseMoney(valorMatch[0]);
+      if(!valor)continue;
 
-    const cuenta=dev[1];
-    const moneda=/US\$|USD/i.test(dev[2])?'USD':'GS';
+      const dateTokens=s=>{const a=s.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];return a};
+      const d1=dateTokens(emision)[0],d2=dateTokens(recepcion)[0],d3=dateTokens(diferida)[0];
+      if(!d1||!d2||!d3)continue;
 
-    // Datapar repite el responsable después de la sucursal/usuario.
-    // Si está presente al final de la fila, se utiliza; de lo contrario,
-    // se conserva el titular como responsable.
-    const afterCurrency=status.slice(dev.index+dev[0].length).trim();
-    const tailName=afterCurrency.replace(/^\s*\d+\s*/,'').trim();
-    const responsable=tailName||titular;
+      // Este informe fue filtrado por Datapar como SITUACIÓN: DEVUELTO.
+      // El registro se clasifica como DEVUELTO aunque el texto de la
+      // columna Movimiento salga contaminado por superposición PDF.
+      out.push({
+        responsable,
+        titular,
+        ruc_ci_titular:'',
+        banco,
+        cuenta,
+        numero_cheque:cheque,
+        fecha_emision:parseDate(d1),
+        fecha_recepcion:parseDate(d2),
+        fecha_diferida:parseDate(d3),
+        moneda:/US\$|USD/i.test(moneda)?'USD':'GS',
+        valor,
+        valor_historico:valor,
+        situacion:'DEVUELTO',
+        movimiento:'DEVUELTO'
+      });
+    }
 
-    return [{
-      responsable,
-      titular,
-      ruc_ci_titular:'',
-      banco,
-      cuenta,
-      numero_cheque:cheque,
-      fecha_emision:parseDate(dates[0]),
-      fecha_recepcion:parseDate(dates[1]),
-      fecha_diferida:parseDate(dates[2]),
-      moneda,
-      valor,
-      valor_historico:valor,
-      situacion:'DEVUELTO',
-      movimiento:'DEVUELTO'
-    }];
+    const seen=new Set();
+    return out.filter(r=>{
+      const k=r.numero_cheque+'|'+r.valor+'|'+r.fecha_diferida;
+      if(seen.has(k))return false;
+      seen.add(k);
+      return true;
+    });
   }
 
   async function load(){
