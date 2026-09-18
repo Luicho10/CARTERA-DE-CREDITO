@@ -96,7 +96,10 @@
     }
 
     const docs=data||[];
-    const effective=x=>x.cliente?.vendedor_actual_id||x.vendedor_actual_id||'';
+    const {data:sellerRows,error:sellerError}=await sb.from('cartera_vendedores').select('id,nombre,activo').order('nombre');
+    if(sellerError){console.error(sellerError);}
+    const sellerList=sellerRows||window.vendedores||[];
+    const effective=x=>x.vendedor_actual_id||x.cliente?.vendedor_actual_id||'';
     const filtered=docs.filter(x=>{
       const ev=effective(x);
       const sellerOk=!sellerValue || (sellerValue==='__none__'?!ev:String(ev)===String(sellerValue));
@@ -112,6 +115,9 @@
       const id=x.id;
       const current=effective(x);
       const cartera=portfolioCurrency(x.cartera_id);
+      const currentSellerName=x.vendedor?.nombre||'';
+      const hasCurrent=sellerList.some(v=>String(v.id)===String(current));
+      const options='<option value="">SIN VENDEDOR</option>'+sellerList.map(v=>`<option value="${v.id}" ${String(current)===String(v.id)?'selected':''}>${esc(v.nombre)}${v.activo===false?' (INACTIVO)':''}</option>`).join('')+(current&&!hasCurrent?`<option value="${current}" selected>${esc(currentSellerName||'VENDEDOR ACTUAL')}</option>`:'');
       return `<tr>
         <td>${esc(portfolioName(x.cartera_id))}</td>
         <td>${esc(x.cliente?.nombre||'')}</td>
