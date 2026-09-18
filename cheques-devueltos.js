@@ -35,68 +35,56 @@
   }
 
   function parseDatapar(groups){
-    // El PDF real separa visualmente la fila en varios bloques de texto.
-    // Por eso NO se interpreta grupo por grupo. Primero se reconstruye todo
-    // el texto de la página en el mismo orden de lectura que PDF.js.
-    const text=groups
-      .slice()
-      .sort((a,b)=>b.y-a.y)
+    // Reconstrucción igual a "1. Importar PDF".
+    const text=groups.slice().sort((a,b)=>b.y-a.y)
       .map(g=>g.items.slice().sort((a,b)=>a.x-b.x).map(i=>i.s).join(' '))
-      .join(' ')
-      .replace(/\s+/g,' ')
-      .trim();
+      .join(' ').replace(/\s+/g,' ').trim();
 
-    const out=[];
-    const pos=text.search(/\b\d{5,8}\s+SUR\s+AGRO/i);
-    if(pos<0) return out;
+    // Se toma la primera fila que tiene la estructura de un cheque.
+    const rowMatch=text.match(/\b(\d{5,8})\s+(.+?)\s+\(\d+\)\s*UENO\s*BANK\s+C\d+(?=\d{2}\/\d{2}\/\d{2,4})[\s\S]*?(?=Resumen por Situación|Resumen por Responsable|Resumen por Sucursal|$)/i);
+    if(!rowMatch)return [];
 
-    // La fila real del PDF aportado queda reconstruida como:
-    // 961496 SUR AGRO E.A.S. (01)UENO BANK C00002905002
-    // 05/01/2026 30/06/2026 05/01/2026 47.209,80 US$
-    // CHEQUE RECHAZADO SUR AGRO DEVUELTO 7879 6
-    const row=text.slice(pos);
-    const m=row.match(/^(\d{5,8})\s+(.+?)\s+\(\d+\)\s*UENO\s*BANK\s+C\d+(?=\d{2}\/\d{2}\/\d{2,4})/i);
-    if(!m) return out;
+    const row=rowMatch[0].trim();
+    const cheque=rowMatch[1];
+    const titular=rowMatch[2].trim();
+    const bankMatch=row.match(/(\(\d+\)\s*UENO\s*BANK)/i);
+    const banco=bankMatch?bankMatch[1].replace(/\s+/g,' ').trim():'UENO BANK';
 
-    const cheque=m[1];
-    const titular=m[2].trim();
-    const rest=row.slice(m[0].length);
+    const dates=row.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];
+    if(dates.length<3)return [];
 
-    const dates=rest.match(/\d{2}\/\d{2}\/\d{2,4}/g)||[];
-    if(dates.length<3) return out;
-
-    const afterDates=rest
-      .replace(/^\d{2}\/\d{2}\/\d{2,4}\s*\d{2}\/\d{2}\/\d{2,4}\s*\d{2}\/\d{2}\/\d{2,4}/,'')
-      .trim();
-
-    const money=afterDates.match(/([\d.]+,\d{2})\s*(US\$|USD|GS)/i);
-    if(!money) return out;
+    // IMPORTANTE: en el PDF real el US$ aparece DESPUÉS de DEVUELTO,
+    // no inmediatamente después del valor.
+    const afterDates=row.slice(row.indexOf(dates[2])+dates[2].length);
+    const money=afterDates.match(/([\d.]+,\d{2})\s+CHEQUE\s+RECHAZADO/i);
+    if(!money)return [];
 
     const valor=parseMoney(money[1]);
-    const moneda=/US\$|USD/i.test(money[2])?'USD':'GS';
+    if(!valor)return [];
 
-    const status=afterDates.slice((money.index||0)+money[0].length).trim();
-    if(!/CHEQUE\s+RECHAZADO/i.test(status)||!/DEVUELTO/i.test(status)) return out;
+    const statusPos=afterDates.search(/CHEQUE\s+RECHAZADO/i);
+    const status=afterDates.slice(statusPos);
+    if(!/DEVUELTO/i.test(status))return [];
 
-    // En este informe el responsable vuelve a aparecer al final de la fila.
-    const devPos=status.search(/DEVUELTO/i);
-    const beforeDev=status.slice(0,devPos).replace(/^CHEQUE\s+RECHAZADO\s*/i,'').trim();
-    const afterDev=status.slice(devPos+'DEVUELTO'.length).trim();
-    const account=afterDev.match(/^(\d{3,})/)?.[1]||'';
+    const dev=status.match(/DEVUELTO\s+(\d{3,})\s+(US\$|USD|GS)/i);
+    if(!dev)return [];
 
-    // Datapar repite SUR AGRO E.A.S. al final; se utiliza ese dato como
-    // responsable cuando está disponible.
-    const responsableMatch=beforeDev.match(/(.+?)$/);
-    const responsable=responsableMatch?responsableMatch[1].trim():titular;
+    const cuenta=dev[1];
+    const moneda=/US\$|USD/i.test(dev[2])?'USD':'GS';
 
-    if(!cheque||!titular||!valor) return out;
+    // Datapar repite el responsable después de la sucursal/usuario.
+    // Si está presente al final de la fila, se utiliza; de lo contrario,
+    // se conserva el titular como responsable.
+    const afterCurrency=status.slice(dev.index+dev[0].length).trim();
+    const tailName=afterCurrency.replace(/^\s*\d+\s*/,'').trim();
+    const responsable=tailName||titular;
 
-    out.push({
-      responsable:responsable||titular,
+    return [{
+      responsable,
       titular,
       ruc_ci_titular:'',
-      banco:'(01) UENO BANK',
-      cuenta:account||'',
+      banco,
+      cuenta,
       numero_cheque:cheque,
       fecha_emision:parseDate(dates[0]),
       fecha_recepcion:parseDate(dates[1]),
@@ -106,8 +94,7 @@
       valor_historico:valor,
       situacion:'DEVUELTO',
       movimiento:'DEVUELTO'
-    });
-    return out;
+    }];
   }
 
   async function load(){
