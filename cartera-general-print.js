@@ -161,32 +161,16 @@
     const usdV=vig.filter(x=>currencyOf(x)==='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
     const gsV=vig.filter(x=>currencyOf(x)!=='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
 
-    // La impresión toma la visibilidad REAL de la tabla que está en pantalla.
-    // Esto evita que el PDF dependa de una copia distinta del estado del selector.
-    const columnAliases={
-      cartera:['CARTERA'],
-      cliente:['CLIENTE'],
-      vendedor_actual:['VENDEDOR ACTUAL'],
-      vendedor_origen:['VENDEDOR ORIGEN'],
-      factura:['FACTURA / NRO. DOCUMENTO','FACTURA / NRO DOCUMENTO','FACTURA','NRO. DOCUMENTO','NRO DOCUMENTO'],
-      vencimiento:['VENC.','VENC','VENCIMIENTO'],
-      saldo:['SALDO CUENTA','SALDO'],
-      estado:['ESTADO']
-    };
-    const normalizeColumn=s=>String(s||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/\\s+/g,' ').trim().toUpperCase();
-    const screenTable=document.querySelector('#view-carteras .table-wrap table');
-    const screenHeaders=screenTable?[...screenTable.querySelectorAll('thead tr:first-child > th')]:[];
-    const screenVisible={};
-    screenHeaders.forEach((th,index)=>{
-      const name=normalizeColumn(th.textContent);
-      const visibleCell=getComputedStyle(th).display!=='none' && th.style.display!=='none';
-      Object.keys(columnAliases).forEach(key=>{
-        if(screenVisible[key]!==undefined)return;
-        if(columnAliases[key].some(alias=>normalizeColumn(alias)===name)){
-          screenVisible[key]=visibleCell;
-        }
-      });
-    });
+    // La selección del selector Mostrar / Ocultar columnas se guarda en
+    // localStorage y es la fuente única para la impresión.
+    // No dependemos del DOM porque la tabla puede reconstruirse al cambiar
+    // de cartera, filtro o vendedor justo antes de imprimir.
+    let savedColumns={};
+    try{
+      savedColumns=JSON.parse(localStorage.getItem('cartera_columnas_visibles_v1')||'{}')||{};
+    }catch(e){
+      savedColumns={};
+    }
 
     const allColumns=isGeneral
       ? [
@@ -209,14 +193,10 @@
           {key:'estado',label:'Estado'}
         ];
 
-    // Si la tabla está disponible, ella manda: solo se imprimen columnas visibles.
-    // Si no está disponible, se conserva el estado guardado como respaldo.
-    let visible={};
-    try{visible=JSON.parse(localStorage.getItem('cartera_columnas_visibles_v1')||'{}')||{}}catch(e){visible={}};
-    const hasScreenSelection=screenHeaders.length>0;
-    const show=key=>hasScreenSelection
-      ? screenVisible[key]!==false
-      : visible[key]!==false;
+    // cartera-columnas.js utiliza "venc" como clave del vencimiento.
+    // El resto de las claves coincide directamente con las columnas impresas.
+    const keyForState=key=>key==='vencimiento'?'venc':key;
+    const show=key=>savedColumns[keyForState(key)]!==false;
     const printColumns=allColumns.filter(c=>show(c.key));
 
     // Título y resumen del reporte se definen antes de abrir la ventana,
