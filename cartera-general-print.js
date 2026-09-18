@@ -219,6 +219,16 @@
       : visible[key]!==false;
     const printColumns=allColumns.filter(c=>show(c.key));
 
+    // Título y resumen del reporte se definen antes de abrir la ventana,
+    // evitando que una referencia inexistente deje la ventana de impresión en blanco.
+    const selectedPortfolioName=isGeneral
+      ? 'CARTERA GENERAL'
+      : portfolioName(id);
+    const title=selectedPortfolioName||'CARTERA';
+    const summary=isGeneral
+      ? `USD: ${fmt(usd,'USD')} · Vencido USD: ${fmt(usdV,'USD')} · GS: ${fmt(gs,'GS')} · Vencido GS: ${fmt(gsV,'GS')}`
+      : `${portfolioCurrency(id)==='USD'?'USD':'GS'}: ${fmt(usd+gs,portfolioCurrency(id)==='USD'?'USD':'GS')} · Vencido: ${fmt(usdV+gsV,portfolioCurrency(id)==='USD'?'USD':'GS')}`;
+
     const headerHtml=printColumns.map(c=>`<th>${esc(c.label)}</th>`).join('');
     const rowsHtml=vig.map(x=>{
       const cur=currencyOf(x);
