@@ -164,11 +164,16 @@
     const {data:portfolioRows,error:portfolioError}=await sb.from('carteras').select('id,nombre,moneda');
     if(portfolioError){toast(`No se pudo obtener la moneda de la cartera: ${portfolioError.message}`);return}
     const currencyById=new Map((portfolioRows||[]).map(x=>[String(x.id),String(x.moneda||'USD').toUpperCase()]));
-    const currencyOf=x=>currencyById.get(String(x.cartera_id))||String(portfolioCurrency(x.cartera_id)||'USD').toUpperCase();
-    const usd=vig.filter(x=>currencyOf(x)==='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
-    const gs=vig.filter(x=>currencyOf(x)!=='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
-    const usdV=vig.filter(x=>currencyOf(x)==='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
-    const gsV=vig.filter(x=>currencyOf(x)!=='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
+    const currencyOf=x=>isGeneral
+      ?String(x.moneda||'USD').toUpperCase()
+      :currencyById.get(String(x.cartera_id))||String(portfolioCurrency(x.cartera_id)||'USD').toUpperCase();
+    // Los totales del encabezado deben calcularse sobre los documentos originales,
+    // mientras que las filas de Cartera General se muestran agrupadas por cliente+moneda.
+    const totalsRows=isGeneral?vigRaw:vig;
+    const usd=totalsRows.filter(x=>currencyOf(x)==='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
+    const gs=totalsRows.filter(x=>currencyOf(x)!=='USD').reduce((a,x)=>a+Number(x.saldo||0),0);
+    const usdV=totalsRows.filter(x=>currencyOf(x)==='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
+    const gsV=totalsRows.filter(x=>currencyOf(x)!=='USD'&&x.vencimiento&&x.vencimiento<today).reduce((a,x)=>a+Number(x.saldo||0),0);
 
     // La selección del selector Mostrar / Ocultar columnas se guarda en
     // localStorage y es la fuente única para la impresión.
@@ -249,7 +254,7 @@
         .foot{margin-top:8px;color:#65736a;font-size:8px}
       </style></head><body>
       <div class="head"><div><h1>${esc(title)}</h1><p>Detalle de cartera de crédito</p></div><div><strong>Fecha: ${new Date().toLocaleDateString('es-PY')}</strong></div></div>
-      <div class="summary">${esc(summary)} · Documentos: ${vig.length}</div>
+      <div class="summary">${esc(summary)} · Documentos: ${isGeneral?vigRaw.length:vig.length}</div>
       <table><thead><tr>
         ${headerHtml}
       </tr></thead><tbody>${rowsHtml}</tbody></table>
