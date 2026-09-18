@@ -185,7 +185,7 @@
           {key:'vendedor_actual',label:'Vendedor actual'},
           {key:'vendedor_origen',label:'Vendedor origen'},
           {key:'factura',label:'Factura / Nro. Documento'},
-          {key:'vencimiento',label:'Venc.'},
+          {key:'venc',label:'Venc.'},
           {key:'saldo',label:'Saldo'},
           {key:'estado',label:'Estado'}
         ]
