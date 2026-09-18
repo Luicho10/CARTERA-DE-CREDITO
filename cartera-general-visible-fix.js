@@ -1,28 +1,62 @@
-/* Fix de carga visible de CARTERA GENERAL.
-   Fuerza la misma carga de detalle que utiliza la impresion,
-   sin modificar las seis carteras individuales. */
+/* FIX DEFINITIVO: selectores de Carteras y Vendedores */
 (function(){
-  const GENERAL_ID='__GENERAL__';
-  function cargarGeneralSiCorresponde(){
-    const sel=document.getElementById('portfolioSelect');
-    if(!sel || sel.value!==GENERAL_ID) return;
-    if(typeof window.loadGeneralDetails==='function'){
-      window.loadGeneralDetails();
+  async function poblarSelectores(){
+    const carteraSelect=document.getElementById('portfolioSelect');
+    const sellerSelect=document.getElementById('sellerFilter');
+    if(!carteraSelect)return;
+
+    try{
+      const [cRes,vRes]=await Promise.all([
+        sb.from('carteras').select('id,nombre,tipo,moneda,orden').order('orden'),
+        sb.from('cartera_vendedores').select('id,nombre,activo').eq('activo',true).order('nombre')
+      ]);
+
+      if(cRes.error) throw cRes.error;
+
+      const carteras=cRes.data||[];
+      const vendedores=vRes.data||[];
+
+      window.carteras=carteras;
+      window.vendedores=vendedores;
+
+      const anterior=carteraSelect.value;
+      carteraSelect.innerHTML=
+        '<option value="__GENERAL__">CARTERA GENERAL</option>'+
+        carteras.map(c=>'<option value="'+c.id+'">'+esc(c.nombre)+'</option>').join('');
+
+      if(anterior && [...carteraSelect.options].some(o=>o.value===anterior)){
+        carteraSelect.value=anterior;
+      }else{
+        carteraSelect.value='__GENERAL__';
+      }
+
+      if(sellerSelect){
+        const vendedorAnterior=sellerSelect.value;
+        sellerSelect.innerHTML=
+          '<option value="">Todos los vendedores</option>'+
+          vendedores.map(v=>'<option value="'+v.id+'">'+esc(v.nombre)+'</option>').join('');
+        if(vendedorAnterior && [...sellerSelect.options].some(o=>o.value===vendedorAnterior)){
+          sellerSelect.value=vendedorAnterior;
+        }
+      }
+
+      carteraSelect.onchange=function(){
+        if(typeof window.loadDetails==='function')window.loadDetails();
+      };
+      if(sellerSelect)sellerSelect.onchange=function(){
+        if(typeof window.loadDetails==='function')window.loadDetails();
+      };
+
+      if(typeof window.loadDetails==='function')window.loadDetails();
+
+    }catch(error){
+      console.error('Error cargando selectores de cartera:',error);
+      toast('No se pudieron cargar las carteras: '+(error.message||error));
     }
   }
-  function bind(){
-    const sel=document.getElementById('portfolioSelect');
-    if(!sel) return;
-    if(!sel.dataset.generalVisibleFix){
-      sel.dataset.generalVisibleFix='1';
-      sel.addEventListener('change',()=>setTimeout(cargarGeneralSiCorresponde,0));
-    }
-    setTimeout(cargarGeneralSiCorresponde,0);
-  }
-  window.addEventListener('load',()=>{
-    bind();
-    setTimeout(bind,300);
-    setTimeout(bind,1000);
-    setTimeout(bind,2000);
+
+  window.addEventListener('load',function(){
+    setTimeout(poblarSelectores,500);
+    setTimeout(poblarSelectores,1500);
   });
 })();
