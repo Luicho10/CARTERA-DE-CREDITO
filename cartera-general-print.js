@@ -104,7 +104,7 @@
       return sellerOk&&(!q||text.includes(q));
     });
     const head=document.querySelector('#view-carteras .table-wrap table thead');
-    if(head)head.innerHTML='<tr><th>Cartera</th><th>Cliente</th><th>Vendedor actual</th><th>Vendedor origen</th><th>Cod. Interno</th><th>Factura / Nro. Documento</th><th>Venc.</th><th>Saldo</th><th>Estado</th></tr>';
+    if(head)head.innerHTML='<tr><th>Cartera</th><th>Cliente</th><th>Vendedor actual</th><th>Vendedor origen</th><th>Factura / Nro. Documento</th><th>Venc.</th><th>Saldo</th><th>Estado</th></tr>';
     const body=document.getElementById('detailBody');
     body.innerHTML=filtered.map(x=>{
       const current=effective(x);
@@ -114,7 +114,6 @@
         <td>${esc(x.cliente?.nombre||'')}</td>
         <td><select class="seller-select" data-doc-id="${x.id}" onchange="saveDocumentSeller('${x.id}',this.value)">${options}</select></td>
         <td>${esc(x.vendedor_origen||'')}</td>
-        <td>${esc(x.cod_interno||'')}</td>
         <td>${esc(x.factura||'')}</td>
         <td>${showDate(x.vencimiento)}</td>
         <td>${fmt(x.saldo,portfolioCurrency(x.cartera_id))}</td>
@@ -201,7 +200,7 @@
       <div class="summary">${esc(summary)} · Documentos: ${vig.length}</div>
       <table><thead><tr>
         ${isGeneral?'<th>Cartera</th>':''}
-        <th>Cliente</th><th>Vendedor actual</th><th>Vendedor origen</th><th>Cod. Interno</th><th>Factura / Nro. Documento</th><th>Venc.</th><th>Saldo</th><th>Estado</th>
+        <th>Cliente</th><th>Vendedor actual</th><th>Vendedor origen</th><th>Factura / Nro. Documento</th><th>Venc.</th><th>Saldo</th><th>Estado</th>
       </tr></thead><tbody>${rowsHtml}</tbody></table>
       <div class="foot">Reporte generado desde CARTERA DE CRÉDITO.</div>
       <script>window.onload=function(){window.focus();window.print();setTimeout(function(){window.close()},500)};<\/script>
