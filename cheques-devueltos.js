@@ -49,7 +49,9 @@
       const its=g.items;
       const rowText=its.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
       if(!/\d{5,8}/.test(rowText))continue;
-      if(!its.some(i=>/DEVUELTO|DEVOLVIDO|RECHAZADO/i.test(i.s)) && !/DEVUELTO|DEVOLVIDO|RECHAZADO/i.test(rowText))continue;
+      // Datapar superpone parte de Situación/Movimiento sobre Valor en este informe.
+      // La fila sigue siendo válida cuando contiene CHEQUE RECHAZADO; el encabezado
+      // del PDF ya fue validado como informe de Situación DEVUELTO.
 
       const inRange=(a,b)=>its.filter(i=>i.x>=a&&i.x<b);
       const textRange=(a,b)=>inRange(a,b).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
@@ -65,7 +67,6 @@
       const valor=parseMoney(amount);
       const currency=/US\$|USD/i.test(dateText+' '+valueText)?'USD':'GS';
       const rejected=/RECHAZADO/i.test(rowText);
-      const devolved=/DEVUELTO|DEVOLVIDO/i.test(rowText)||true;
       if(!responsable||!titular||!banco||!cuenta||!cheque||dates.length<3||!valor||!rejected)continue;
 
       out.push({
