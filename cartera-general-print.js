@@ -91,9 +91,10 @@
     const currencyOf=x=>String(x.moneda||portfolioCurrency(x.cartera_id)||'USD').toUpperCase()==='USD'?'USD':'GS';
     docs.forEach(x=>{
       const currency=currencyOf(x);
+      const clientId=String(x.cliente_id||'').trim();
       const clientCode=String(x.cliente?.codigo||x.codigo_cliente||'').trim();
       const clientName=String(x.cliente?.nombre||x.cliente_nombre||x.cliente||'').trim();
-      const clientKey=clientCode||norm(clientName);
+      const clientKey=clientId?'ID:'+clientId:(clientCode?'COD:'+clientCode:'NOM:'+norm(clientName));
       const key=clientKey+'|'+currency;
       if(!groups.has(key))groups.set(key,{id:key,cliente:clientName,codigo:clientCode,moneda:currency,saldo:0,documentos:0,vencidos:0,sellers:new Set(),origins:new Set()});
       const g=groups.get(key);
